@@ -32,7 +32,8 @@ contract SystemReward is System, ISystemReward{
 
   receive() external payable{
     if (msg.value>0) {
-      emit receiveDeposit(msg.sender, msg.value);
+      // emit receiveDeposit(msg.sender, msg.value);
+      address(uint160(BURN_ADDRESS)).transfer(msg.value);
     }
   }
 

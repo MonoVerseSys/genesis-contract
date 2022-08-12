@@ -47,5 +47,6 @@ const data = {
 
 const templateString = fs.readFileSync(program.template).toString();
 const resultString = nunjucks.renderString(templateString, data);
+// console.log(resultString)
 fs.writeFileSync(program.output, resultString);
-console.log("BSCValidatorSet file updated.");
+console.log("BSCValidatorSet file updated.!");

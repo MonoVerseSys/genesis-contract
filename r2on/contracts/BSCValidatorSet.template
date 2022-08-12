@@ -53,7 +53,6 @@ contract BSCValidatorSet is IBSCValidatorSet, System, IParamSubscriber, IApplica
   uint256 public numOfJailed;
 
   uint256 public constant BURN_RATIO_SCALE = 10000;
-  address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
   uint256 public constant INIT_BURN_RATIO = {{initBurnRatio}};
   uint256 public burnRatio;
   bool public burnRatioInitialized;
@@ -196,8 +195,6 @@ contract BSCValidatorSet is IBSCValidatorSet, System, IParamSubscriber, IApplica
    function deposit(address valAddr) external payable onlyCoinbase onlyInit noEmptyDeposit{
      uint256 value = msg.value;
 
-     
-
      if (value > 0) {
        if(rewardCount < MAX_REWARD) {
          rewardCount = rewardCount.add(1);
@@ -232,7 +229,7 @@ contract BSCValidatorSet is IBSCValidatorSet, System, IParamSubscriber, IApplica
     return CODE_OK;
   }
 
-    function updateValidatorSet(Validator[] memory validatorSet) public onlyValidatorManager returns (uint32) {
+    function updateValidatorSet(Validator[] memory validatorSet) public onlyValidatorManager initValidatorExtraSet returns (uint32) {
     {
       // do verify.
       (bool valid, string memory errMsg) = checkValidatorSet(validatorSet);
@@ -242,111 +239,13 @@ contract BSCValidatorSet is IBSCValidatorSet, System, IParamSubscriber, IApplica
       }
     }
 
-    // step 0: force all maintaining validators to exit `Temporary Maintenance`
-    // - 1. validators exit maintenance
-    // - 2. clear all maintainInfo
-    // - 3. get unjailed validators from validatorSet
+    
     Validator[] memory validatorSetTemp = _forceMaintainingValidatorsExit(validatorSet);
 
-    //step 1: do calculate distribution, do not make it as an internal function for saving gas.
-    uint crossSize;
-    uint directSize;
-    uint validatorsNum = currentValidatorSet.length;
-    for (uint i; i < validatorsNum; ++i) {
-      if (currentValidatorSet[i].incoming >= DUSTY_INCOMING) {
-        crossSize ++;
-      } else if (currentValidatorSet[i].incoming > 0) {
-        directSize ++;
-      }
-    }
-
-    //cross transfer
-    address[] memory crossAddrs = new address[](crossSize);
-    uint256[] memory crossAmounts = new uint256[](crossSize);
-    uint256[] memory crossIndexes = new uint256[](crossSize);
-    address[] memory crossRefundAddrs = new address[](crossSize);
-    uint256 crossTotal;
-    // direct transfer
-    address payable[] memory directAddrs = new address payable[](directSize);
-    uint256[] memory directAmounts = new uint256[](directSize);
-    crossSize = 0;
-    directSize = 0;
-    uint256 relayFee = ITokenHub(TOKEN_HUB_ADDR).getMiniRelayFee();
-    if (relayFee > DUSTY_INCOMING) {
-      emit failReasonWithStr("fee is larger than DUSTY_INCOMING");
-      return ERROR_RELAYFEE_TOO_LARGE;
-    }
-    for (uint i; i < validatorsNum; ++i) {
-      if (currentValidatorSet[i].incoming >= DUSTY_INCOMING) {
-        crossAddrs[crossSize] = currentValidatorSet[i].BBCFeeAddress;
-        uint256 value = currentValidatorSet[i].incoming - currentValidatorSet[i].incoming % PRECISION;
-        crossAmounts[crossSize] = value.sub(relayFee);
-        crossRefundAddrs[crossSize] = currentValidatorSet[i].BBCFeeAddress;
-        crossIndexes[crossSize] = i;
-        crossTotal = crossTotal.add(value);
-        crossSize ++;
-      } else if (currentValidatorSet[i].incoming > 0) {
-        directAddrs[directSize] = currentValidatorSet[i].feeAddress;
-        directAmounts[directSize] = currentValidatorSet[i].incoming;
-        directSize ++;
-      }
-    }
-
-    //step 2: do cross chain transfer
-    bool failCross = false;
-    if (crossTotal > 0) {
-      try ITokenHub(TOKEN_HUB_ADDR).batchTransferOutBNB{value:crossTotal}(crossAddrs, crossAmounts, crossRefundAddrs, uint64(block.timestamp + expireTimeSecondGap)) returns (bool success) {
-        if (success) {
-           emit batchTransfer(crossTotal);
-        } else {
-           emit batchTransferFailed(crossTotal, "batch transfer return false");
-        }
-      }catch Error(string memory reason) {
-        failCross = true;
-        emit batchTransferFailed(crossTotal, reason);
-      }catch (bytes memory lowLevelData) {
-        failCross = true;
-        emit batchTransferLowerFailed(crossTotal, lowLevelData);
-      }
-    }
-
-    if (failCross) {
-      for (uint i; i< crossIndexes.length;++i) {
-        uint idx = crossIndexes[i];
-        bool success = currentValidatorSet[idx].feeAddress.send(currentValidatorSet[idx].incoming);
-        if (success) {
-          emit directTransfer(currentValidatorSet[idx].feeAddress, currentValidatorSet[idx].incoming);
-        } else {
-          emit directTransferFail(currentValidatorSet[idx].feeAddress, currentValidatorSet[idx].incoming);
-        }
-      }
-    }
-
-    // step 3: direct transfer
-    if (directAddrs.length>0) {
-      for (uint i;i<directAddrs.length;++i) {
-        bool success = directAddrs[i].send(directAmounts[i]);
-        if (success) {
-          emit directTransfer(directAddrs[i], directAmounts[i]);
-        } else {
-          emit directTransferFail(directAddrs[i], directAmounts[i]);
-        }
-      }
-    }
-
-    // step 4: do dusk transfer
-    if (address(this).balance>0) {
-      emit systemTransfer(address(this).balance);
-      address(uint160(SYSTEM_REWARD_ADDR)).transfer(address(this).balance);
-    }
-    // step 5: do update validator set state
-    totalInComing = 0;
-    numOfJailed = 0;
     if (validatorSetTemp.length>0) {
       doUpdateState(validatorSetTemp);
     }
 
-    // step 6: clean slash contract
     ISlashIndicator(SLASH_CONTRACT_ADDR).clean();
     emit validatorSetUpdated();
     return CODE_OK;

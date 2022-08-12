@@ -1,3 +1,4 @@
+const isDev = process.env.NODE_ENV !== 'production'
 const { spawn } = require("child_process")
 const program = require("commander")
 const nunjucks = require("nunjucks")
@@ -7,11 +8,10 @@ const web3 = require("web3")
 const validators = require("./r2on/validators")
 const init_holders = require("./r2on/init_holders")
 
-
 program.option("--bscChainId <bscChainId>",
     "bscChainId",
     "0060");
-program.option("-c, --chainid <chainid>", "chain id", "11714")
+program.option("-c, --chainid <chainid>", "chain id", isDev ? "11714" : "11808")
 
 program.option(
     "--initValidatorSetBytes <initValidatorSetBytes>",
@@ -43,12 +43,12 @@ program.version("0.0.1")
 program.option(
   "-o, --output <output-file>",
   "Genesis json file",
-  "./genesis_r2on.json"
+  isDev ? "./genesis_r2on_test.json" : "./genesis_r2on.json"
 )
 program.option(
   "-t, --template <template>",
   "Genesis template json",
-  "./genesis-template.json"
+  "./genesis-template-r2on.json"
 )
 program.parse(process.argv)
 
@@ -78,6 +78,7 @@ function compileContract(key, contractFile, contractName) {
       resolve(result.join(""))
     })
   }).then(compiledData => {
+    console.log(contractFile)
     compiledData = compiledData.replace(
       `======= ${contractFile}:${contractName} =======\nBinary of the runtime part:`,
       "@@@@"
@@ -151,7 +152,7 @@ Promise.all([
 
 program.option("--initLockedBNBOnTokenHub <initLockedBNBOnTokenHub>",
     "initLockedBNBOnTokenHub",
-    "1234");
+    "0");
 
   const data = {
     initLockedBNBOnTokenHub: program.initLockedBNBOnTokenHub,
